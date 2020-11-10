@@ -1,0 +1,35 @@
+---
+# tasks file for vmware
+- name: Clone a virtual machine from Windows template and customize
+  vmware_guest:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: no
+    datacenter: "{{ ha_datacenter }}"
+    cluster: "{{ vmware_cluster_name }}"
+    name: "{{ new_vm_name }}"
+    template: "{{ template_name }}"
+    networks:
+    - name: "{{ nic_virt_group }}"
+      ip: "{{ nic_ip }}"
+      netmask: "{{ nic_netmask }}"
+      gateway: "{{ nic_gw }}"
+      #mac: aa:bb:dd:aa:00:14
+      domain: "{{ win_domain }}"
+      dns_servers:
+      - "{{ win_dns1 }}"
+      - "{{ win_dns2 }}"
+    #- vlan: 1234
+    #  type: dhcp
+    customization:
+      autologon: yes
+      dns_servers:
+      - "{{ win_dns1 }}"
+      - "{{ win_dns2 }}"
+      domain: "{{ win_domain }}"
+      password: "{{ new_vm_password }}"
+      runonce:
+      - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
+  delegate_to: localhost
+

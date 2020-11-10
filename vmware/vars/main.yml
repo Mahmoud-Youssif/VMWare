@@ -1,0 +1,17 @@
+---
+# vars file for vmware
+vcenter_hostname: ""
+vcenter_username: ""
+vcenter_password: ""
+ha_datacenter: ""
+vmware_cluster_name: ""
+new_vm_name: ""
+template_name: ""
+nic_virt_group: ""
+nic_ip: ""
+nic_netmask: ""
+nic_gw: ""
+win_domain: ""
+win_dns1: ""
+win_dns2: ""
+new_vm_password: ""
