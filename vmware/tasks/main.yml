@@ -6,6 +6,7 @@
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: no
+    folder: "{{ vmware_new_vm_folder }}"
     datacenter: "{{ ha_datacenter }}"
     cluster: "{{ vmware_cluster_name }}"
     name: "{{ new_vm_name }}"
