@@ -30,7 +30,9 @@
       - "{{ win_dns2 }}"
       domain: "{{ win_domain }}"
       password: "{{ new_vm_password }}"
-      runonce:
-      - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
-  delegate_to: localhost
+      domainadmin: "{{ ad_admin }}"
+      domainadminpassword: "{{ ad_admin_pass }}"
+      #runonce:
+      #- powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
+  #delegate_to: localhost
 
