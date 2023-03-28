@@ -5,7 +5,7 @@
     hostname: "{{ vmware.host }}"
     username: "{{ vmware.username }}"
     password: "{{ vmware.password }}"
-    validate_certs: no
+    validate_certs: false
     folder: "{{ vmware_new_vm_folder }}"
     datacenter: "{{ ha_datacenter }}"
     cluster: "{{ vmware_cluster_name }}"
@@ -16,23 +16,22 @@
       ip: "{{ nic_ip }}"
       netmask: "{{ nic_netmask }}"
       gateway: "{{ nic_gw }}"
-      #mac: aa:bb:dd:aa:00:14
+      # mac: aa:bb:dd:aa:00:14
       domain: "{{ win_domain }}"
       dns_servers:
-      - "{{ win_dns1 }}"
-      - "{{ win_dns2 }}"
-    #- vlan: 1234
+        - "{{ win_dns1 }}"
+        - "{{ win_dns2 }}"
+    # - vlan: 1234
     #  type: dhcp
     customization:
-      autologon: yes
+      autologon: true
       dns_servers:
-      - "{{ win_dns1 }}"
-      - "{{ win_dns2 }}"
+        - "{{ win_dns1 }}"
+        - "{{ win_dns2 }}"
       domain: "{{ win_domain }}"
       password: "{{ new_vm_password }}"
       domainadmin: "{{ ad_admin }}"
       domainadminpassword: "{{ ad_admin_pass }}"
-      #runonce:
-      #- powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
-  #delegate_to: localhost
-
+      # runonce:
+      # - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
+  # delegate_to: localhost
