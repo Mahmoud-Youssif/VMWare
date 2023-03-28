@@ -2,9 +2,9 @@
 # tasks file for vmware
 - name: Clone a virtual machine from Windows template and customize
   community.vmware.vmware_guest:
-    hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
+    hostname: "{{ vmware.host }}"
+    username: "{{ vmware.username }}"
+    password: "{{ vmware.password }}"
     validate_certs: no
     folder: "{{ vmware_new_vm_folder }}"
     datacenter: "{{ ha_datacenter }}"
