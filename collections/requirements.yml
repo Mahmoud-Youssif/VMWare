@@ -1,3 +1,4 @@
 ---
 collections:
  - vmware.vmware_rest
+ - cloud.vmware_ops
