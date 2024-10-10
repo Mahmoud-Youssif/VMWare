@@ -1,0 +1,110 @@
+---
+- name: Provision and Configure Windows VM
+  hosts: localhost
+  gather_facts: no
+  vars:
+    vcenter_hostname: "your_vcenter_host"
+    vcenter_username: "your_vcenter_user"
+    vcenter_password: "your_vcenter_password"
+    vm_name: "WinVM01"
+    template_name: "Windows_Template"
+    datacenter_name: "Datacenter"
+    cluster_name: "Cluster"
+    datastore_name: "Datastore"
+    network_name: "Network"
+    guest_username: "Administrator"
+    guest_password: "windows_password"
+    new_hostname: "NewHostname"
+    new_ip_address: "192.168.1.100"
+    subnet_mask: "255.255.255.0"
+    gateway: "192.168.1.1"
+    dns_servers:
+      - "8.8.8.8"
+      - "8.8.4.4"
+    domain_name: "yourdomain.com"
+    domain_admin: "domain_admin_user"
+    domain_password: "domain_admin_password"
+
+  tasks:
+    - name: Deploy VM from template
+      vmware.vmware_rest.vcenter_vm:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: no
+        datacenter: "{{ datacenter_name }}"
+        cluster: "{{ cluster_name }}"
+        datastore: "{{ datastore_name }}"
+        name: "{{ vm_name }}"
+        template: "{{ template_name }}"
+        power_state: powered_on
+        placement:
+          cluster: "{{ cluster_name }}"
+        guest_customization:
+          customization:
+            hostname: "{{ new_hostname }}"
+            domain: "{{ domain_name }}"
+            ip: 
+              ipv4: "{{ new_ip_address }}"
+              subnet_mask: "{{ subnet_mask }}"
+              gateway: "{{ gateway }}"
+        wait_for_ip_address: true
+      register: vm_info
+
+    - name: Wait for WinRM to become available
+      wait_for:
+        host: "{{ vm_info.instance.ip_address }}"
+        port: 5985
+        timeout: 300
+        state: started
+
+    - name: Set Windows hostname
+      ansible.windows.win_hostname:
+        name: "{{ new_hostname }}"
+      vars:
+        ansible_host: "{{ vm_info.instance.ip_address }}"
+        ansible_user: "{{ guest_username }}"
+        ansible_password: "{{ guest_password }}"
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_winrm_server_cert_validation: ignore
+
+    - name: Configure Windows network settings
+      ansible.windows.win_network_adapter:
+        adapter_name: "Ethernet"
+        ipv4_address: "{{ new_ip_address }}"
+        ipv4_netmask: "{{ subnet_mask }}"
+        ipv4_gateway: "{{ gateway }}"
+        dns_servers: "{{ dns_servers }}"
+      vars:
+        ansible_host: "{{ vm_info.instance.ip_address }}"
+        ansible_user: "{{ guest_username }}"
+        ansible_password: "{{ guest_password }}"
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_winrm_server_cert_validation: ignore
+
+    - name: Join the Windows VM to the domain
+      ansible.windows.win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin }}"
+        domain_admin_password: "{{ domain_password }}"
+        hostname: "{{ new_hostname }}"
+      vars:
+        ansible_host: "{{ vm_info.instance.ip_address }}"
+        ansible_user: "{{ guest_username }}"
+        ansible_password: "{{ guest_password }}"
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_winrm_server_cert_validation: ignore
+
+    - name: Reboot the Windows VM to apply changes
+      ansible.windows.win_reboot:
+      vars:
+        ansible_host: "{{ vm_info.instance.ip_address }}"
+        ansible_user: "{{ guest_username }}"
+        ansible_password: "{{ guest_password }}"
+        ansible_connection: winrm
+        ansible_winrm_transport: ntlm
+        ansible_winrm_server_cert_validation: ignore
+
