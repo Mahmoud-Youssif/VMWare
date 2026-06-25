@@ -2,6 +2,7 @@
 stages:
   - lint
   - validate
+  - build
 
 variables:
   PY_COLORS: "1"
@@ -36,3 +37,26 @@ syntax-check:
     - ansible-playbook --syntax-check new_vm_coll.yml
     - ansible-playbook --syntax-check new_playbook.yml
     - ansible-playbook --syntax-check vcenter_survey_refresh.yml
+
+ee-build:
+  stage: build
+  image: quay.io/ansible/ansible-builder:latest
+  rules:
+    - changes:
+        - EE_vmware/**
+  before_script:
+    - podman login registry.redhat.io
+        --username "$RHN_USERNAME"
+        --password "$RHN_PASSWORD"
+  script:
+    - cd EE_vmware
+    - ansible-builder build
+        --file execution-environment.yml
+        --tag "${CI_REGISTRY_IMAGE}/ee-vmware:${CI_COMMIT_SHORT_SHA}"
+        --tag "${CI_REGISTRY_IMAGE}/ee-vmware:latest"
+        --verbosity 3
+    - podman push "${CI_REGISTRY_IMAGE}/ee-vmware:${CI_COMMIT_SHORT_SHA}"
+    - podman push "${CI_REGISTRY_IMAGE}/ee-vmware:latest"
+  # Set these CI/CD variables in GitLab → Settings → CI/CD → Variables:
+  #   RHN_USERNAME  — Red Hat registry username
+  #   RHN_PASSWORD  — Red Hat registry password

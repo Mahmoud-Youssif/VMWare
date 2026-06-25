@@ -1,0 +1,18 @@
+# Python dependencies for VMware collections and Windows connectivity
+#
+# VMware vSphere SDK (required by community.vmware and vmware.vmware_rest)
+pyvmomi>=8.0.0.0
+
+# Async HTTP client (required by vmware.vmware_rest REST API calls)
+aiohttp>=3.9.0
+
+# Windows WinRM connectivity (required by ansible.windows)
+pywinrm>=0.4.3
+requests-ntlm>=1.3.0
+
+# HTTP library (general dependency)
+requests>=2.31.0
+
+# vSphere Automation SDK — required by community.vmware modules that use
+# the vCenter REST/CIS API (e.g. vmware_cluster_drs, vmware_content_library)
+vsphere-automation-sdk-python>=8.0.0.0 ; python_version >= "3.8"
