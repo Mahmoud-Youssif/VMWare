@@ -58,14 +58,17 @@ ee-build:
         --username "$RHN_USERNAME"
         --password "$RHN_PASSWORD"
   script:
+    - podman login quay.io --username "$QUAY_USERNAME" --password "$QUAY_PASSWORD"
     - cd EE_vmware
     - ansible-builder build
         --file execution-environment.yml
-        --tag "${CI_REGISTRY_IMAGE}/ee-vmware:${CI_COMMIT_SHORT_SHA}"
-        --tag "${CI_REGISTRY_IMAGE}/ee-vmware:latest"
+        --tag "quay.io/myoussif/ee-vmware:${CI_COMMIT_SHORT_SHA}"
+        --tag "quay.io/myoussif/ee-vmware:latest"
         --verbosity 3
-    - podman push "${CI_REGISTRY_IMAGE}/ee-vmware:${CI_COMMIT_SHORT_SHA}"
-    - podman push "${CI_REGISTRY_IMAGE}/ee-vmware:latest"
+    - podman push "quay.io/myoussif/ee-vmware:${CI_COMMIT_SHORT_SHA}"
+    - podman push "quay.io/myoussif/ee-vmware:latest"
   # Set these CI/CD variables in GitLab → Settings → CI/CD → Variables:
   #   RHN_USERNAME  — Red Hat registry username
   #   RHN_PASSWORD  — Red Hat registry password
+  #   QUAY_USERNAME — quay.io username
+  #   QUAY_PASSWORD — quay.io password or robot account token

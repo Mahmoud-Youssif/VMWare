@@ -222,7 +222,8 @@ Set these under **Settings → Secrets and variables → Actions**:
 |--------|-------|
 | `RHN_USERNAME` | Red Hat registry username |
 | `RHN_PASSWORD` | Red Hat registry password |
-| `GITHUB_TOKEN` | Auto-provided by GitHub (used for GHCR push) |
+| `QUAY_USERNAME` | `myoussif` |
+| `QUAY_PASSWORD` | quay.io password or robot account token |
 
 ### Run linting locally
 

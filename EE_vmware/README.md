@@ -52,11 +52,12 @@ ansible-builder build \
   --verbosity 3
 ```
 
-## Push to a Private Registry
+## Push to Quay.io
 
 ```bash
-podman tag ee-vmware:latest <your-registry>/ee-vmware:latest
-podman push <your-registry>/ee-vmware:latest
+podman login quay.io
+podman tag ee-vmware:latest quay.io/myoussif/ee-vmware:latest
+podman push quay.io/myoussif/ee-vmware:latest
 ```
 
 ## Test Locally with ansible-navigator
@@ -72,10 +73,10 @@ ansible-navigator run playbook.yml \
 
 ## Use in AAP
 
-1. Push the image to a registry accessible from AAP.
+1. Push the image to Quay.io (see above).
 2. In AAP → **Execution Environments** → **Add**:
    - **Name:** `ee-vmware`
-   - **Image:** `<your-registry>/ee-vmware:latest`
+   - **Image:** `quay.io/myoussif/ee-vmware:latest`
    - **Pull:** Always
 3. Assign the EE to your VMware Job Templates.
 
