@@ -1,9 +1,0 @@
-# Python packages NOT automatically pulled in by the installed collections.
-#
-# ansible-builder introspects each collection's python_requires and adds their
-# deps automatically. Only list packages here that are genuinely missing from
-# those auto-detected sets.
-
-# WinRM connectivity for ansible.windows (NTLM transport used in playbooks)
-pywinrm>=0.4.3
-requests-ntlm>=1.3.0
