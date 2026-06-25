@@ -1,0 +1,38 @@
+---
+stages:
+  - lint
+  - validate
+
+variables:
+  PY_COLORS: "1"
+  ANSIBLE_FORCE_COLOR: "1"
+
+.base:
+  before_script:
+    - pip install --quiet ansible ansible-lint yamllint
+
+yamllint:
+  extends: .base
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - yamllint -d "{extends: default, rules: {line-length: {max: 160}, truthy: {allowed-values: ['true', 'false']}}}" .
+
+ansible-lint:
+  extends: .base
+  stage: lint
+  image: python:3.11-slim
+  script:
+    - ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+    - ansible-lint --profile production
+
+syntax-check:
+  extends: .base
+  stage: validate
+  image: python:3.11-slim
+  script:
+    - ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+    - ansible-playbook --syntax-check playbook.yml
+    - ansible-playbook --syntax-check new_vm_coll.yml
+    - ansible-playbook --syntax-check new_playbook.yml
+    - ansible-playbook --syntax-check vcenter_survey_refresh.yml

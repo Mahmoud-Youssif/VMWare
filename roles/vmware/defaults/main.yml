@@ -1,2 +1,28 @@
 ---
-# defaults file for vmware
+# Datacenter and cluster placement
+ha_datacenter: ""
+vmware_cluster_name: ""
+vmware_new_vm_folder: ""
+
+# VM identity
+new_vm_name: ""
+template_name: ""
+
+# Network configuration
+nic_virt_group: ""
+nic_ip: ""
+nic_netmask: ""
+nic_gw: ""
+
+# DNS and domain
+win_domain: ""
+win_dns_servers:
+  - ""
+  - ""
+
+# Guest credentials (override via vault or extra-vars)
+new_vm_password: ""
+
+# Active Directory join credentials (override via vault or extra-vars)
+ad_admin: ""
+ad_admin_pass: ""

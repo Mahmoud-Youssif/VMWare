@@ -1,0 +1,28 @@
+---
+# ---------------------------------------------------------------------------
+# vCenter connection (credentials come from environment vars or vault)
+# ---------------------------------------------------------------------------
+vcenter_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
+vcenter_username: "{{ lookup('env', 'VCENTER_USER') }}"
+vcenter_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
+
+# ---------------------------------------------------------------------------
+# vCenter placement defaults — override per environment via extra-vars or
+# host/group vars as needed
+# ---------------------------------------------------------------------------
+vcenter_datacenter: "Datacenter"
+vcenter_cluster: "Cluster"
+vcenter_datastore: "Datastore"
+vcenter_folder: "/{{ vcenter_datacenter }}/vm"
+
+# ---------------------------------------------------------------------------
+# DNS — override with your internal DNS servers
+# ---------------------------------------------------------------------------
+dns_server_primary: "192.168.1.10"
+dns_server_secondary: "192.168.1.11"
+
+# ---------------------------------------------------------------------------
+# Windows WinRM defaults
+# ---------------------------------------------------------------------------
+winrm_port: 5985
+winrm_transport: ntlm

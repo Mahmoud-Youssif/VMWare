@@ -1,11 +1,11 @@
 ---
-- name: Provision and Configure Windows VM
+- name: Provision Windows VM from Template
   hosts: localhost
   gather_facts: no
   vars:
-    vcenter_hostname: "your_vcenter_host"
-    vcenter_username: "your_vcenter_user"
-    vcenter_password: "your_vcenter_password"
+    vcenter_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VCENTER_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
     vm_name: "WinVM01"
     template_name: "Windows_Template"
     datacenter_name: "Datacenter"
@@ -13,98 +13,119 @@
     datastore_name: "Datastore"
     network_name: "Network"
     guest_username: "Administrator"
-    guest_password: "windows_password"
+    guest_password: "{{ lookup('env', 'GUEST_PASSWORD') }}"
     new_hostname: "NewHostname"
     new_ip_address: "192.168.1.100"
     subnet_mask: "255.255.255.0"
+    prefix_length: 24
     gateway: "192.168.1.1"
     dns_servers:
-      - "8.8.8.8"
-      - "8.8.4.4"
+      - "{{ dns_server_primary }}"
+      - "{{ dns_server_secondary }}"
     domain_name: "yourdomain.com"
-    domain_admin: "domain_admin_user"
-    domain_password: "domain_admin_password"
+    domain_admin: "{{ lookup('env', 'DOMAIN_ADMIN_USER') }}"
+    domain_password: "{{ lookup('env', 'DOMAIN_ADMIN_PASSWORD') }}"
+    nic_adapter_name: "Ethernet"
 
   tasks:
+    - name: Assert required variables are defined
+      ansible.builtin.assert:
+        that:
+          - vcenter_hostname | length > 0
+          - vcenter_username | length > 0
+          - vcenter_password | length > 0
+          - vm_name | length > 0
+          - template_name | length > 0
+          - datacenter_name | length > 0
+          - cluster_name | length > 0
+          - datastore_name | length > 0
+          - new_hostname | length > 0
+          - new_ip_address | length > 0
+          - domain_name | length > 0
+        fail_msg: "One or more required variables are not set. Check environment variables."
+
     - name: Deploy VM from template
-      vmware.vmware_rest.vcenter_vm:
-        hostname: "{{ vcenter_hostname }}"
-        username: "{{ vcenter_username }}"
-        password: "{{ vcenter_password }}"
-        validate_certs: no
-        datacenter: "{{ datacenter_name }}"
-        cluster: "{{ cluster_name }}"
-        datastore: "{{ datastore_name }}"
-        name: "{{ vm_name }}"
-        template: "{{ template_name }}"
-        power_state: powered_on
-        placement:
-          cluster: "{{ cluster_name }}"
-        guest_customization:
-          customization:
-            hostname: "{{ new_hostname }}"
-            domain: "{{ domain_name }}"
-            ip: 
-              ipv4: "{{ new_ip_address }}"
-              subnet_mask: "{{ subnet_mask }}"
-              gateway: "{{ gateway }}"
-        wait_for_ip_address: true
-      register: vm_info
+      block:
+        - name: Clone and customise VM from Windows template
+          vmware.vmware_rest.vcenter_vm:
+            hostname: "{{ vcenter_hostname }}"
+            username: "{{ vcenter_username }}"
+            password: "{{ vcenter_password }}"
+            validate_certs: false
+            state: present
+            datacenter: "{{ datacenter_name }}"
+            cluster: "{{ cluster_name }}"
+            datastore: "{{ datastore_name }}"
+            name: "{{ vm_name }}"
+            template: "{{ template_name }}"
+            power_state: powered_on
+            placement:
+              cluster: "{{ cluster_name }}"
+            guest_customization:
+              customization:
+                hostname: "{{ new_hostname }}"
+                domain: "{{ domain_name }}"
+                ip:
+                  ipv4: "{{ new_ip_address }}"
+                  subnet_mask: "{{ subnet_mask }}"
+                  gateway: "{{ gateway }}"
+            wait_for_ip_address: true
+          register: vm_info
+
+        - name: Add new VM to in-memory inventory
+          ansible.builtin.add_host:
+            name: new_windows_vm
+            ansible_host: "{{ vm_info.value.guest.ip_address }}"
+            ansible_user: "{{ guest_username }}"
+            ansible_password: "{{ guest_password }}"
+            ansible_connection: winrm
+            ansible_winrm_transport: ntlm
+            ansible_winrm_server_cert_validation: ignore
+            ansible_port: 5985
+
+      rescue:
+        - name: Fail with descriptive message on deploy error
+          ansible.builtin.fail:
+            msg: "VM deployment failed: {{ ansible_failed_result.msg | default('unknown error') }}"
 
     - name: Wait for WinRM to become available
-      wait_for:
-        host: "{{ vm_info.instance.ip_address }}"
+      ansible.builtin.wait_for:
+        host: "{{ hostvars['new_windows_vm']['ansible_host'] }}"
         port: 5985
         timeout: 300
         state: started
 
-    - name: Set Windows hostname
-      ansible.windows.win_hostname:
-        name: "{{ new_hostname }}"
-      vars:
-        ansible_host: "{{ vm_info.instance.ip_address }}"
-        ansible_user: "{{ guest_username }}"
-        ansible_password: "{{ guest_password }}"
-        ansible_connection: winrm
-        ansible_winrm_transport: ntlm
-        ansible_winrm_server_cert_validation: ignore
+- name: Configure Windows VM
+  hosts: new_windows_vm
+  gather_facts: no
+  vars:
+    new_hostname: "{{ hostvars['localhost']['new_hostname'] }}"
+    new_ip_address: "{{ hostvars['localhost']['new_ip_address'] }}"
+    subnet_mask: "{{ hostvars['localhost']['subnet_mask'] }}"
+    gateway: "{{ hostvars['localhost']['gateway'] }}"
+    dns_servers: "{{ hostvars['localhost']['dns_servers'] }}"
+    domain_name: "{{ hostvars['localhost']['domain_name'] }}"
+    domain_admin: "{{ hostvars['localhost']['domain_admin'] }}"
+    domain_password: "{{ hostvars['localhost']['domain_password'] }}"
+    nic_adapter_name: "{{ hostvars['localhost']['nic_adapter_name'] }}"
 
-    - name: Configure Windows network settings
+  tasks:
+    - name: Configure Windows network adapter
       ansible.windows.win_network_adapter:
-        adapter_name: "Ethernet"
+        adapter_name: "{{ nic_adapter_name }}"
         ipv4_address: "{{ new_ip_address }}"
         ipv4_netmask: "{{ subnet_mask }}"
         ipv4_gateway: "{{ gateway }}"
         dns_servers: "{{ dns_servers }}"
-      vars:
-        ansible_host: "{{ vm_info.instance.ip_address }}"
-        ansible_user: "{{ guest_username }}"
-        ansible_password: "{{ guest_password }}"
-        ansible_connection: winrm
-        ansible_winrm_transport: ntlm
-        ansible_winrm_server_cert_validation: ignore
 
-    - name: Join the Windows VM to the domain
+    - name: Join Windows VM to domain
       ansible.windows.win_domain_membership:
         dns_domain_name: "{{ domain_name }}"
         domain_admin_user: "{{ domain_admin }}"
         domain_admin_password: "{{ domain_password }}"
-        hostname: "{{ new_hostname }}"
-      vars:
-        ansible_host: "{{ vm_info.instance.ip_address }}"
-        ansible_user: "{{ guest_username }}"
-        ansible_password: "{{ guest_password }}"
-        ansible_connection: winrm
-        ansible_winrm_transport: ntlm
-        ansible_winrm_server_cert_validation: ignore
+      register: domain_join
 
-    - name: Reboot the Windows VM to apply changes
+    - name: Reboot to apply domain join and network changes
       ansible.windows.win_reboot:
-      vars:
-        ansible_host: "{{ vm_info.instance.ip_address }}"
-        ansible_user: "{{ guest_username }}"
-        ansible_password: "{{ guest_password }}"
-        ansible_connection: winrm
-        ansible_winrm_transport: ntlm
-        ansible_winrm_server_cert_validation: ignore
-
+        reboot_timeout: 300
+      when: domain_join.reboot_required | default(true)

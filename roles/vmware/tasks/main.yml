@@ -1,37 +1,43 @@
 ---
-# tasks file for vmware
+- name: Assert required variables are set
+  ansible.builtin.assert:
+    that:
+      - ha_datacenter | length > 0
+      - vmware_cluster_name | length > 0
+      - new_vm_name | length > 0
+      - template_name | length > 0
+      - nic_ip | length > 0
+      - nic_netmask | length > 0
+      - nic_gw | length > 0
+      - nic_virt_group | length > 0
+      - win_domain | length > 0
+    fail_msg: >-
+      Required variable is not set. Ensure ha_datacenter, vmware_cluster_name,
+      new_vm_name, template_name, nic_*, and win_domain are all defined.
+
 - name: Clone a virtual machine from Windows template and customize
   community.vmware.vmware_guest:
     hostname: "{{ vmware.host }}"
     username: "{{ vmware.username }}"
     password: "{{ vmware.password }}"
     validate_certs: false
+    state: present
     folder: "{{ vmware_new_vm_folder }}"
     datacenter: "{{ ha_datacenter }}"
     cluster: "{{ vmware_cluster_name }}"
     name: "{{ new_vm_name }}"
     template: "{{ template_name }}"
     networks:
-    - name: "{{ nic_virt_group }}"
-      ip: "{{ nic_ip }}"
-      netmask: "{{ nic_netmask }}"
-      gateway: "{{ nic_gw }}"
-      # mac: aa:bb:dd:aa:00:14
-      domain: "{{ win_domain }}"
-      dns_servers:
-        - "{{ win_dns1 }}"
-        - "{{ win_dns2 }}"
-    # - vlan: 1234
-    #  type: dhcp
+      - name: "{{ nic_virt_group }}"
+        ip: "{{ nic_ip }}"
+        netmask: "{{ nic_netmask }}"
+        gateway: "{{ nic_gw }}"
+        domain: "{{ win_domain }}"
+        dns_servers: "{{ win_dns_servers }}"
     customization:
-      autologon: true
-      dns_servers:
-        - "{{ win_dns1 }}"
-        - "{{ win_dns2 }}"
+      autologon: false
+      dns_servers: "{{ win_dns_servers }}"
       domain: "{{ win_domain }}"
       password: "{{ new_vm_password }}"
       domainadmin: "{{ ad_admin }}"
       domainadminpassword: "{{ ad_admin_pass }}"
-      # runonce:
-      # - powershell.exe -ExecutionPolicy Unrestricted -File C:\Windows\Temp\ConfigureRemotingForAnsible.ps1 -ForceNewSSLCert -EnableCredSSP
-  # delegate_to: localhost

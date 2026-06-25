@@ -1,25 +1,6 @@
 ---
-# vars file for vmware
-vmware: 
+# vCenter credentials sourced from environment variables (do not hardcode here)
+vmware:
   host: '{{ lookup("env", "VMWARE_HOST") }}'
   username: '{{ lookup("env", "VMWARE_USER") }}'
   password: '{{ lookup("env", "VMWARE_PASSWORD") }}'
-
-#vcenter_hostname: ""
-#vcenter_username: ""
-#vcenter_password: ""
-ha_datacenter: ""
-vmware_cluster_name: ""
-new_vm_name: ""
-template_name: ""
-nic_virt_group: ""
-nic_ip: ""
-nic_netmask: ""
-nic_gw: ""
-win_domain: ""
-win_dns1: ""
-win_dns2: ""
-new_vm_password: ""
-vmware_new_vm_folder: ""
-ad_admin: ""
-ad_admin_pass: ""

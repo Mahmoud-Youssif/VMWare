@@ -1,26 +1,29 @@
 ---
-- hosts: localhost
-  gather_facts: true
+# Example playbook using the cloud.vmware_ops collection to provision a VM.
+# Requires: ansible-galaxy collection install -r collections/requirements.yml
+- name: Provision a VM using cloud.vmware_ops
+  hosts: localhost
+  gather_facts: false
 
   tasks:
-    - name: Provision a VM 
+    - name: Provision a VM
       ansible.builtin.import_role:
         name: cloud.vmware_ops.provision_vm
       vars:
-        provision_vm_hostname: "test"
-        provision_vm_username: "test"
-        provision_vm_password: "test"
+        provision_vm_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
+        provision_vm_username: "{{ lookup('env', 'VCENTER_USER') }}"
+        provision_vm_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
         provision_vm_validate_certs: false
-        provision_vm_cluster: "DC0_C0"
-        provision_vm_folder: "/DC0/vm"
-        provision_vm_datacenter: "DC0"
-        provision_vm_name: "vm-test"
-        provision_vm_port: "8989"
+        provision_vm_cluster: "{{ vcenter_cluster }}"
+        provision_vm_folder: "{{ vcenter_folder }}"
+        provision_vm_datacenter: "{{ vcenter_datacenter }}"
+        provision_vm_name: "{{ vm_name }}"
+        provision_vm_port: "443"
         provision_vm_disk:
-        - size_gb: 10
-          type: thin
-          datastore: "LocalDS_0"
+          - size_gb: 60
+            type: thin
+            datastore: "{{ vcenter_datastore }}"
         provision_vm_hardware:
-          memory_mb: 512
-          num_cpus: 4
-        provision_vm_guest_id: "centos64Guest"
+          memory_mb: 4096
+          num_cpus: 2
+        provision_vm_guest_id: "windows9Server64Guest"

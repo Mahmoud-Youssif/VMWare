@@ -1,0 +1,364 @@
+---
+# vcenter_survey_refresh.yml
+#
+# Connects to vCenter, collects all provisioning-relevant infrastructure data,
+# then updates the target AAP Job Template survey with live dropdown choices.
+#
+# Required environment variables:
+#   VCENTER_HOST, VCENTER_USER, VCENTER_PASSWORD
+#   AAP_HOST, AAP_TOKEN (or AAP_USER + AAP_PASSWORD), AAP_JOB_TEMPLATE_ID
+#
+# Usage:
+#   ansible-playbook vcenter_survey_refresh.yml
+#   ansible-playbook vcenter_survey_refresh.yml -e "aap_job_template_id=42"
+
+- name: Gather vCenter provisioning inventory
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    vcenter_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VCENTER_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
+    vcenter_validate_certs: false
+
+    aap_host: "{{ lookup('env', 'AAP_HOST') }}"
+    aap_token: "{{ lookup('env', 'AAP_TOKEN') }}"
+    aap_username: "{{ lookup('env', 'AAP_USER') | default('') }}"
+    aap_password: "{{ lookup('env', 'AAP_PASSWORD') | default('') }}"
+    aap_job_template_id: "{{ lookup('env', 'AAP_JOB_TEMPLATE_ID') }}"
+    aap_validate_certs: false
+
+  tasks:
+    # ------------------------------------------------------------------
+    # Preflight checks
+    # ------------------------------------------------------------------
+    - name: Assert required vCenter variables are set
+      ansible.builtin.assert:
+        that:
+          - vcenter_hostname | length > 0
+          - vcenter_username | length > 0
+          - vcenter_password | length > 0
+        fail_msg: "VCENTER_HOST, VCENTER_USER, and VCENTER_PASSWORD must be set."
+
+    - name: Assert required AAP variables are set
+      ansible.builtin.assert:
+        that:
+          - aap_host | length > 0
+          - aap_job_template_id | length > 0
+          - (aap_token | length > 0) or (aap_username | length > 0 and aap_password | length > 0)
+        fail_msg: >-
+          AAP_HOST and AAP_JOB_TEMPLATE_ID must be set.
+          Provide either AAP_TOKEN or both AAP_USER and AAP_PASSWORD.
+
+    # ------------------------------------------------------------------
+    # Collect Datacenters
+    # ------------------------------------------------------------------
+    - name: Get all datacenters
+      vmware.vmware_rest.vcenter_datacenter_info:
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        vcenter_username: "{{ vcenter_username }}"
+        vcenter_password: "{{ vcenter_password }}"
+        vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+      register: r_datacenters
+
+    - name: Build datacenter name list
+      ansible.builtin.set_fact:
+        survey_datacenters: "{{ r_datacenters.value | map(attribute='name') | sort | list }}"
+
+    # ------------------------------------------------------------------
+    # Collect Clusters
+    # ------------------------------------------------------------------
+    - name: Get all clusters
+      vmware.vmware_rest.vcenter_cluster_info:
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        vcenter_username: "{{ vcenter_username }}"
+        vcenter_password: "{{ vcenter_password }}"
+        vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+      register: r_clusters
+
+    - name: Build cluster name list
+      ansible.builtin.set_fact:
+        survey_clusters: "{{ r_clusters.value | map(attribute='name') | sort | list }}"
+
+    # ------------------------------------------------------------------
+    # Collect Datastores (exclude system/ISO datastores)
+    # ------------------------------------------------------------------
+    - name: Get all datastores
+      vmware.vmware_rest.vcenter_datastore_info:
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        vcenter_username: "{{ vcenter_username }}"
+        vcenter_password: "{{ vcenter_password }}"
+        vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+      register: r_datastores
+
+    - name: Build datastore name list
+      ansible.builtin.set_fact:
+        survey_datastores: >-
+          {{
+            r_datastores.value
+            | selectattr('type', 'in', ['VMFS', 'NFS', 'NFS41', 'VSAN', 'VVOL'])
+            | map(attribute='name')
+            | sort
+            | list
+          }}
+
+    # ------------------------------------------------------------------
+    # Collect Networks / Port Groups
+    # ------------------------------------------------------------------
+    - name: Get all networks
+      vmware.vmware_rest.vcenter_network_info:
+        vcenter_hostname: "{{ vcenter_hostname }}"
+        vcenter_username: "{{ vcenter_username }}"
+        vcenter_password: "{{ vcenter_password }}"
+        vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+      register: r_networks
+
+    - name: Build network name list
+      ansible.builtin.set_fact:
+        survey_networks: >-
+          {{
+            r_networks.value
+            | map(attribute='name')
+            | unique
+            | sort
+            | list
+          }}
+
+    # ------------------------------------------------------------------
+    # Collect VM Templates
+    # ------------------------------------------------------------------
+    - name: Get all VM templates
+      community.vmware.vmware_vm_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        vm_type: template
+      register: r_templates
+
+    - name: Build template name list
+      ansible.builtin.set_fact:
+        survey_templates: >-
+          {{
+            r_templates.virtual_machines
+            | map(attribute='guest_name')
+            | sort
+            | list
+          }}
+
+    # ------------------------------------------------------------------
+    # Collect Folders (VM folders only)
+    # ------------------------------------------------------------------
+    - name: Get all VM folders
+      community.vmware.vmware_folder_info:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+      register: r_folders
+
+    - name: Build vm folder path list
+      ansible.builtin.set_fact:
+        survey_folders: >-
+          {{
+            r_folders.flat_folder_info
+            | selectattr('type', 'equalto', 'vm')
+            | map(attribute='path')
+            | sort
+            | list
+          }}
+
+    # ------------------------------------------------------------------
+    # Summary debug output
+    # ------------------------------------------------------------------
+    - name: Display collected vCenter inventory
+      ansible.builtin.debug:
+        msg:
+          datacenters: "{{ survey_datacenters }}"
+          clusters: "{{ survey_clusters }}"
+          datastores: "{{ survey_datastores }}"
+          networks: "{{ survey_networks }}"
+          templates: "{{ survey_templates }}"
+          folders: "{{ survey_folders }}"
+
+    # ------------------------------------------------------------------
+    # Build AAP survey spec from collected data
+    # ------------------------------------------------------------------
+    - name: Build survey spec for AAP Job Template
+      ansible.builtin.set_fact:
+        aap_survey_spec:
+          name: "VM Provisioning Survey"
+          description: "Auto-refreshed from vCenter on {{ ansible_date_time.date | default(lookup('pipe', 'date +%Y-%m-%d')) }}"
+          spec:
+            - question_name: "VM Name"
+              question_description: "Name of the new virtual machine"
+              required: true
+              type: text
+              variable: vm_name
+              min: 1
+              max: 64
+              default: ""
+
+            - question_name: "VM Template"
+              question_description: "Source template to clone from"
+              required: true
+              type: multiplechoice
+              variable: template_name
+              min: 0
+              max: 1024
+              default: "{{ survey_templates | first | default('') }}"
+              choices: "{{ survey_templates | join('\n') }}"
+
+            - question_name: "Datacenter"
+              question_description: "vCenter Datacenter"
+              required: true
+              type: multiplechoice
+              variable: datacenter_name
+              min: 0
+              max: 1024
+              default: "{{ survey_datacenters | first | default('') }}"
+              choices: "{{ survey_datacenters | join('\n') }}"
+
+            - question_name: "Cluster"
+              question_description: "Target compute cluster"
+              required: true
+              type: multiplechoice
+              variable: cluster_name
+              min: 0
+              max: 1024
+              default: "{{ survey_clusters | first | default('') }}"
+              choices: "{{ survey_clusters | join('\n') }}"
+
+            - question_name: "Datastore"
+              question_description: "Target datastore for VM storage"
+              required: true
+              type: multiplechoice
+              variable: datastore_name
+              min: 0
+              max: 1024
+              default: "{{ survey_datastores | first | default('') }}"
+              choices: "{{ survey_datastores | join('\n') }}"
+
+            - question_name: "Network / Port Group"
+              question_description: "Network to attach the VM NIC to"
+              required: true
+              type: multiplechoice
+              variable: network_name
+              min: 0
+              max: 1024
+              default: "{{ survey_networks | first | default('') }}"
+              choices: "{{ survey_networks | join('\n') }}"
+
+            - question_name: "VM Folder"
+              question_description: "vCenter folder path to place the VM in"
+              required: false
+              type: multiplechoice
+              variable: vmware_new_vm_folder
+              min: 0
+              max: 1024
+              default: "{{ survey_folders | first | default('') }}"
+              choices: "{{ survey_folders | join('\n') }}"
+
+            - question_name: "New Hostname"
+              question_description: "Windows hostname (NetBIOS, max 15 chars)"
+              required: true
+              type: text
+              variable: new_hostname
+              min: 1
+              max: 15
+              default: ""
+
+            - question_name: "IP Address"
+              question_description: "Static IPv4 address for the new VM"
+              required: true
+              type: text
+              variable: new_ip_address
+              min: 7
+              max: 15
+              default: ""
+
+            - question_name: "Subnet Mask"
+              question_description: "Subnet mask (e.g. 255.255.255.0)"
+              required: true
+              type: text
+              variable: subnet_mask
+              min: 7
+              max: 15
+              default: "255.255.255.0"
+
+            - question_name: "Default Gateway"
+              question_description: "Default gateway IP"
+              required: true
+              type: text
+              variable: gateway
+              min: 7
+              max: 15
+              default: ""
+
+            - question_name: "Domain Name"
+              question_description: "Active Directory domain to join (e.g. corp.local)"
+              required: true
+              type: text
+              variable: domain_name
+              min: 3
+              max: 255
+              default: ""
+
+    # ------------------------------------------------------------------
+    # Determine AAP auth header
+    # ------------------------------------------------------------------
+    - name: Set AAP auth header (token)
+      ansible.builtin.set_fact:
+        aap_auth_header:
+          Authorization: "Bearer {{ aap_token }}"
+          Content-Type: "application/json"
+      when: aap_token | length > 0
+
+    - name: Set AAP auth header (basic)
+      ansible.builtin.set_fact:
+        aap_auth_header:
+          Content-Type: "application/json"
+      when: aap_token | length == 0
+
+    # ------------------------------------------------------------------
+    # Update AAP Job Template survey via REST API
+    # ------------------------------------------------------------------
+    - name: POST survey spec to AAP Job Template
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/v2/job_templates/{{ aap_job_template_id }}/survey_spec/"
+        method: POST
+        headers: "{{ aap_auth_header }}"
+        url_username: "{{ aap_username | default(omit) }}"
+        url_password: "{{ aap_password | default(omit) }}"
+        force_basic_auth: "{{ (aap_token | length == 0) | bool }}"
+        body: "{{ aap_survey_spec | to_json }}"
+        body_format: json
+        status_code: 200
+        validate_certs: "{{ aap_validate_certs }}"
+      register: r_survey_update
+
+    - name: Enable survey on the Job Template
+      ansible.builtin.uri:
+        url: "https://{{ aap_host }}/api/v2/job_templates/{{ aap_job_template_id }}/"
+        method: PATCH
+        headers: "{{ aap_auth_header }}"
+        url_username: "{{ aap_username | default(omit) }}"
+        url_password: "{{ aap_password | default(omit) }}"
+        force_basic_auth: "{{ (aap_token | length == 0) | bool }}"
+        body:
+          survey_enabled: true
+        body_format: json
+        status_code: 200
+        validate_certs: "{{ aap_validate_certs }}"
+
+    - name: Survey refresh complete
+      ansible.builtin.debug:
+        msg: >-
+          Survey on Job Template {{ aap_job_template_id }} successfully updated.
+          Datacenters: {{ survey_datacenters | length }},
+          Clusters: {{ survey_clusters | length }},
+          Datastores: {{ survey_datastores | length }},
+          Networks: {{ survey_networks | length }},
+          Templates: {{ survey_templates | length }},
+          Folders: {{ survey_folders | length }}.

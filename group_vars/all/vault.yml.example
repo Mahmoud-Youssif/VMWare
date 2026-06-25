@@ -1,0 +1,13 @@
+---
+# Rename this file to vault.yml and encrypt with:
+#   ansible-vault encrypt group_vars/all/vault.yml
+#
+# Then run playbooks with:
+#   ansible-playbook playbook.yml --ask-vault-pass
+#   ansible-playbook playbook.yml --vault-password-file ~/.vault_pass
+
+vault_vcenter_password: "REPLACE_ME"
+vault_guest_password: "REPLACE_ME"
+vault_domain_admin_password: "REPLACE_ME"
+vault_ad_admin_pass: "REPLACE_ME"
+vault_new_vm_password: "REPLACE_ME"

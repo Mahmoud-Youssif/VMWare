@@ -1,4 +1,5 @@
 ---
-- hosts: localhost
+- name: Clone Windows VM from template using vmware role
+  hosts: localhost
   roles:
     - vmware
