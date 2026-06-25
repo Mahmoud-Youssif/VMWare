@@ -1,0 +1,143 @@
+---
+# GitHub Actions CI — mirrors the jobs defined in .gitlab-ci.yml
+# Runs on every push and pull request to main.
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   RHN_USERNAME      — Red Hat registry username
+#   RHN_PASSWORD      — Red Hat registry password
+#   GHCR_TOKEN        — GitHub token with packages:write (use GITHUB_TOKEN)
+
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  PY_COLORS: "1"
+  ANSIBLE_FORCE_COLOR: "1"
+
+jobs:
+  # --------------------------------------------------------------------
+  # Stage: lint
+  # --------------------------------------------------------------------
+  yamllint:
+    name: YAML Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install yamllint
+        run: pip install --quiet yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -d "{extends: default, rules: {line-length: {max: 160}, truthy: {allowed-values: ['true', 'false']}}}" .
+
+  ansible-lint:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ansible and ansible-lint
+        run: pip install --quiet ansible ansible-lint
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+
+      - name: Run ansible-lint
+        run: ansible-lint --profile production
+
+  # --------------------------------------------------------------------
+  # Stage: validate
+  # --------------------------------------------------------------------
+  syntax-check:
+    name: Playbook Syntax Check
+    runs-on: ubuntu-latest
+    needs: [yamllint, ansible-lint]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ansible
+        run: pip install --quiet ansible
+
+      - name: Install collections
+        run: ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+
+      - name: Syntax check — playbook.yml
+        run: ansible-playbook --syntax-check playbook.yml
+
+      - name: Syntax check — new_vm_coll.yml
+        run: ansible-playbook --syntax-check new_vm_coll.yml
+
+      - name: Syntax check — new_playbook.yml
+        run: ansible-playbook --syntax-check new_playbook.yml
+
+      - name: Syntax check — vcenter_survey_refresh.yml
+        run: ansible-playbook --syntax-check vcenter_survey_refresh.yml
+
+  # --------------------------------------------------------------------
+  # Stage: build — only when EE_vmware/** changes
+  # --------------------------------------------------------------------
+  ee-build:
+    name: Build EE Image
+    runs-on: ubuntu-latest
+    needs: [syntax-check]
+    if: |
+      github.event_name == 'push' &&
+      contains(github.event.commits[*].modified, 'EE_vmware/') ||
+      contains(github.event.commits[*].added, 'EE_vmware/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ansible-builder
+        run: pip install --quiet ansible-builder
+
+      - name: Log in to Red Hat registry
+        run: |
+          podman login registry.redhat.io \
+            --username "${{ secrets.RHN_USERNAME }}" \
+            --password "${{ secrets.RHN_PASSWORD }}"
+
+      - name: Log in to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io \
+            --username "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Build EE image
+        run: |
+          cd EE_vmware
+          ansible-builder build \
+            --file execution-environment.yml \
+            --tag "ghcr.io/${{ github.repository_owner }}/ee-vmware:${{ github.sha }}" \
+            --tag "ghcr.io/${{ github.repository_owner }}/ee-vmware:latest" \
+            --verbosity 3
+
+      - name: Push EE image
+        run: |
+          podman push "ghcr.io/${{ github.repository_owner }}/ee-vmware:${{ github.sha }}"
+          podman push "ghcr.io/${{ github.repository_owner }}/ee-vmware:latest"

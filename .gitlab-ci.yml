@@ -1,4 +1,13 @@
 ---
+# NOTE: This repo is currently hosted on GitHub. This file is kept for when
+# the repo is mirrored or moved to GitLab. The equivalent GitHub Actions
+# workflow lives at .github/workflows/ci.yml and runs automatically.
+#
+# GitLab-specific variables needed if running here:
+#   CI_REGISTRY_IMAGE   — set automatically by GitLab CI
+#   RHN_USERNAME        — Red Hat registry username (CI/CD variable)
+#   RHN_PASSWORD        — Red Hat registry password (CI/CD variable)
+
 stages:
   - lint
   - validate

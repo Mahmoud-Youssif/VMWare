@@ -198,15 +198,33 @@ For more details see the [Ansible Windows Setup documentation](https://docs.ansi
 
 ## CI / Linting
 
-This project uses GitLab CI (`.gitlab-ci.yml`) with three jobs:
+This project carries **both** a GitHub Actions workflow and a GitLab CI pipeline:
+
+| File | Platform | Active? |
+|------|----------|---------|
+| `.github/workflows/ci.yml` | GitHub Actions | Yes — runs on every push/PR to `main` |
+| `.gitlab-ci.yml` | GitLab CI | Kept for future GitLab mirror/move |
+
+### GitHub Actions jobs
 
 | Job | Stage | What it checks |
 |-----|-------|---------------|
 | `yamllint` | lint | YAML formatting |
 | `ansible-lint` | lint | Ansible best practices |
-| `syntax-check` | validate | Playbook syntax |
+| `syntax-check` | validate | Playbook syntax for all playbooks |
+| `ee-build` | build | Builds and pushes `ee-vmware` image to GHCR (on EE changes only) |
 
-Run linting locally:
+### Required GitHub Secrets
+
+Set these under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+|--------|-------|
+| `RHN_USERNAME` | Red Hat registry username |
+| `RHN_PASSWORD` | Red Hat registry password |
+| `GITHUB_TOKEN` | Auto-provided by GitHub (used for GHCR push) |
+
+### Run linting locally
 
 ```bash
 pip install ansible-lint yamllint
