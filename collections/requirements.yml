@@ -1,6 +1,0 @@
-#---
-#collections:
-  #- name: vmware.vmware_rest
-  #- name: cloud.vmware_ops
-  #- name: community.vmware
-  #- name: ansible.windows
