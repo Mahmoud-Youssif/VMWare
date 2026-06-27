@@ -1,0 +1,12 @@
+---
+# Ansible Galaxy collections required for linting, syntax checks, and playbook execution.
+# These same collections are bundled into the EE image via EE_vmware/requirements.yml.
+collections:
+  - name: vmware.vmware_rest
+    version: ">=3.0.0"
+
+  - name: community.vmware
+    version: ">=4.0.0"
+
+  - name: ansible.windows
+    version: ">=2.0.0"
