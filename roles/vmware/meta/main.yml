@@ -1,8 +1,8 @@
 ---
 galaxy_info:
-  author: your name
+  author: Mahmoud Youssif
   description: Ansible role for cloning and customising Windows VMs on VMware vCenter
-  company: your company (optional)
+  company: ""
 
   license: Apache-2.0
 

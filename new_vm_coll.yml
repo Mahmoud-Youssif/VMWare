@@ -114,10 +114,11 @@
     # guest customization spec in the first play — no separate win_* task needed.
 
     - name: Join Windows VM to domain
-      ansible.windows.win_domain_membership:
+      microsoft.ad.membership:
         dns_domain_name: "{{ domain_name }}"
         domain_admin_user: "{{ domain_admin }}"
         domain_admin_password: "{{ domain_password }}"
+        state: domain
       register: domain_join
 
     - name: Reboot to apply domain join and network changes
