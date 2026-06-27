@@ -5,9 +5,9 @@
 # Build:
 #   ansible-builder build -f execution-environment.yml -t ee-vmware:latest -v 3
 #
-# Tag and push to a registry:
-#   podman tag ee-vmware:latest <registry>/ee-vmware:latest
-#   podman push <registry>/ee-vmware:latest
+# Push to Quay:
+#   podman tag ee-vmware:latest quay.io/myoussif/ee-vmware:latest
+#   podman push quay.io/myoussif/ee-vmware:latest
 
 version: 3
 
@@ -24,11 +24,13 @@ additional_build_steps:
   prepend_galaxy:
     - ENV ANSIBLE_GALAXY_SERVER_TIMEOUT=120
 
-  prepend_builder: []
-
-  append_final:
-    - RUN ansible --version
-    - RUN ansible-galaxy collection list
+  prepend_final:
+    # The ee-minimal-rhel9 base image ships Python 3.9 as system default
+    # (/usr/bin/python3) but ansible-core uses /usr/bin/python3.12.
+    # ansible-builder's assemble step installs packages into Python 3.9
+    # site-packages which ansible cannot see. Explicitly install every
+    # runtime package needed by VMware and Windows modules into Python 3.12.
+    - RUN /usr/bin/python3.12 -m pip install --no-cache-dir pyvmomi pywinrm requests-ntlm
 
 options:
   package_manager_path: /usr/bin/microdnf

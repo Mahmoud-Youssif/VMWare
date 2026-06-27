@@ -1,8 +1,11 @@
-# Python packages NOT automatically pulled in by the installed collections.
+# Python packages required at runtime inside the EE.
 #
-# ansible-builder introspects each collection's python_requires and adds their
-# deps automatically. Only list packages here that are genuinely missing from
-# those auto-detected sets.
+# ansible-builder introspects collection python_requires but does not always
+# install every transitive dep into the final image layer. List critical
+# packages explicitly to guarantee they are present.
+
+# VMware SDK — required by community.vmware (pyVim / pyVmomi submodules)
+pyvmomi>=9.1.0.0
 
 # WinRM connectivity for ansible.windows (NTLM transport used in playbooks)
 pywinrm>=0.4.3
