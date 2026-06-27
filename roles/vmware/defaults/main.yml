@@ -6,23 +6,21 @@ vmware_new_vm_folder: ""
 
 # VM identity
 new_vm_name: ""
+new_hostname: ""
 template_name: ""
 
 # Network configuration
 nic_virt_group: ""
 nic_ip: ""
 nic_netmask: ""
+nic_prefix: "24"
 nic_gw: ""
-
-# DNS and domain
-win_domain: ""
-win_dns_servers:
-  - ""
+dns_servers:
   - ""
 
-# Guest credentials (override via vault or extra-vars)
-new_vm_password: ""
+# DNS search domain (optional)
+dns_domain: ""
 
-# Active Directory join credentials (override via vault or extra-vars)
-ad_admin: ""
-ad_admin_pass: ""
+# SSH access to the new VM (used for post-boot configuration)
+vm_ssh_user: "ansible"
+vm_ssh_key: ""

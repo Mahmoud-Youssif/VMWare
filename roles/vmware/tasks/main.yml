@@ -5,23 +5,23 @@
       - ha_datacenter | length > 0
       - vmware_cluster_name | length > 0
       - new_vm_name | length > 0
+      - new_hostname | length > 0
       - template_name | length > 0
       - nic_ip | length > 0
       - nic_netmask | length > 0
       - nic_gw | length > 0
       - nic_virt_group | length > 0
-      - win_domain | length > 0
     fail_msg: >-
       Required variable is not set. Ensure ha_datacenter, vmware_cluster_name,
-      new_vm_name, template_name, nic_*, and win_domain are all defined.
+      new_vm_name, new_hostname, template_name, and nic_* are all defined.
 
-- name: Clone a virtual machine from Windows template and customize
+- name: Clone RHEL VM from template and apply guest customization
   community.vmware.vmware_guest:
     hostname: "{{ vmware.host }}"
     username: "{{ vmware.username }}"
     password: "{{ vmware.password }}"
     validate_certs: false
-    state: present
+    state: poweredon
     folder: "{{ vmware_new_vm_folder }}"
     datacenter: "{{ ha_datacenter }}"
     cluster: "{{ vmware_cluster_name }}"
@@ -32,12 +32,83 @@
         ip: "{{ nic_ip }}"
         netmask: "{{ nic_netmask }}"
         gateway: "{{ nic_gw }}"
-        domain: "{{ win_domain }}"
-        dns_servers: "{{ win_dns_servers }}"
+        dns_servers: "{{ dns_servers }}"
+        type: static
     customization:
-      autologon: false
-      dns_servers: "{{ win_dns_servers }}"
-      domain: "{{ win_domain }}"
-      password: "{{ new_vm_password }}"
-      domainadmin: "{{ ad_admin }}"
-      domainadminpassword: "{{ ad_admin_pass }}"
+      hostname: "{{ new_hostname }}"
+      domain: "{{ dns_domain | default('') }}"
+      dns_servers: "{{ dns_servers }}"
+    wait_for_customization: true
+  register: vm_deploy_result
+
+- name: Wait for VMware Tools to become available
+  community.vmware.vmware_guest_tools_wait:
+    hostname: "{{ vmware.host }}"
+    username: "{{ vmware.username }}"
+    password: "{{ vmware.password }}"
+    validate_certs: false
+    name: "{{ new_vm_name }}"
+    datacenter: "{{ ha_datacenter }}"
+    timeout: 300
+
+- name: Add new VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ new_vm_name }}"
+    ansible_host: "{{ nic_ip }}"
+    ansible_user: "{{ vm_ssh_user }}"
+    ansible_ssh_private_key_file: "{{ vm_ssh_key | default(omit) }}"
+    ansible_become: true
+    ansible_become_method: sudo
+    groups: vmware_new_vms
+
+- name: Wait for SSH on new VM to become reachable
+  ansible.builtin.wait_for:
+    host: "{{ nic_ip }}"
+    port: 22
+    timeout: 300
+    state: started
+  delegate_to: localhost
+
+- name: Set hostname on new VM
+  ansible.builtin.hostname:
+    name: "{{ new_hostname }}"
+  delegate_to: "{{ new_vm_name }}"
+  become: true
+
+- name: Ensure /etc/hosts reflects the new hostname
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: "^127\\.0\\.1\\.1"
+    line: "127.0.1.1  {{ new_hostname }}"
+    state: present
+  delegate_to: "{{ new_vm_name }}"
+  become: true
+
+- name: Gather active NetworkManager connection name
+  ansible.builtin.command:
+    cmd: nmcli -t -f NAME,DEVICE con show --active
+  register: nmcli_active
+  changed_when: false
+  delegate_to: "{{ new_vm_name }}"
+  become: true
+
+- name: Set static IP, gateway, and DNS via nmcli
+  ansible.builtin.command:
+    cmd: >
+      nmcli con mod "{{ nmcli_active.stdout_lines[0].split(':')[0] }}"
+      ipv4.addresses "{{ nic_ip }}/{{ nic_prefix }}"
+      ipv4.gateway "{{ nic_gw }}"
+      ipv4.dns "{{ dns_servers | join(' ') }}"
+      ipv4.method manual
+      connection.autoconnect yes
+  register: nmcli_mod
+  changed_when: nmcli_mod.rc == 0
+  delegate_to: "{{ new_vm_name }}"
+  become: true
+
+- name: Reload NetworkManager connection to apply changes
+  ansible.builtin.command:
+    cmd: nmcli con up "{{ nmcli_active.stdout_lines[0].split(':')[0] }}"
+  changed_when: true
+  delegate_to: "{{ new_vm_name }}"
+  become: true
