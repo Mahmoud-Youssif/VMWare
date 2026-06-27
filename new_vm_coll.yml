@@ -110,13 +110,8 @@
     nic_adapter_name: "{{ hostvars['localhost']['nic_adapter_name'] }}"
 
   tasks:
-    - name: Configure Windows network adapter
-      ansible.windows.win_network_adapter:
-        adapter_name: "{{ nic_adapter_name }}"
-        ipv4_address: "{{ new_ip_address }}"
-        ipv4_netmask: "{{ subnet_mask }}"
-        ipv4_gateway: "{{ gateway }}"
-        dns_servers: "{{ dns_servers }}"
+    # Network adapter configuration (IP/DNS) is already applied by the VMware
+    # guest customization spec in the first play — no separate win_* task needed.
 
     - name: Join Windows VM to domain
       ansible.windows.win_domain_membership:

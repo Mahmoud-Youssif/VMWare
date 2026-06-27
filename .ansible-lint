@@ -1,0 +1,14 @@
+---
+profile: production
+
+skip_list:
+  # Role variables here are externally-facing — they are passed in from playbooks
+  # and AAP Job Template surveys. Adding a vmware_ prefix would be a breaking
+  # change for existing deployments without meaningful safety benefit.
+  - var-naming[no-role-prefix]
+
+exclude_paths:
+  # new_playbook.yml uses the cloud.vmware_ops collection which is only available
+  # on Red Hat Automation Hub (not public Galaxy). Exclude it from CI lint/syntax
+  # checks that run against public Galaxy collections.
+  - new_playbook.yml
