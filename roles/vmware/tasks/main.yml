@@ -8,107 +8,132 @@
       - new_hostname | length > 0
       - template_name | length > 0
       - nic_ip | length > 0
-      - nic_netmask | length > 0
+      - nic_prefix | length > 0
       - nic_gw | length > 0
       - nic_virt_group | length > 0
+      - dns_servers | length > 0
+      - vm_admin_password | length > 0
+      - vm_ssh_public_key | length > 0
     fail_msg: >-
       Required variable is not set. Ensure ha_datacenter, vmware_cluster_name,
-      new_vm_name, new_hostname, template_name, and nic_* are all defined.
+      new_vm_name, new_hostname, template_name, nic_*, dns_servers,
+      vm_admin_password, and vm_ssh_public_key are all defined.
 
-- name: Clone RHEL VM from template and apply guest customization
+# ------------------------------------------------------------------ #
+# Step 1: Clone template (powered off, no VMware customization spec)  #
+# ------------------------------------------------------------------ #
+- name: Clone RHEL VM from template (powered off)
   community.vmware.vmware_guest:
     hostname: "{{ vmware.host }}"
     username: "{{ vmware.username }}"
     password: "{{ vmware.password }}"
     validate_certs: false
-    state: poweredon
-    folder: "{{ vmware_new_vm_folder }}"
+    state: present
+    folder: "{{ vmware_new_vm_folder | default(omit) }}"
     datacenter: "{{ ha_datacenter }}"
     cluster: "{{ vmware_cluster_name }}"
     name: "{{ new_vm_name }}"
     template: "{{ template_name }}"
     networks:
       - name: "{{ nic_virt_group }}"
-        ip: "{{ nic_ip }}"
-        netmask: "{{ nic_netmask }}"
-        gateway: "{{ nic_gw }}"
-        dns_servers: "{{ dns_servers }}"
-        type: static
-    customization:
-      hostname: "{{ new_hostname }}"
-      domain: "{{ dns_domain | default('') }}"
-      dns_servers: "{{ dns_servers }}"
-    wait_for_customization: true
-  register: vm_deploy_result
+  register: vm_clone_result
 
-- name: Wait for VMware Tools to become available
-  community.vmware.vmware_guest_tools_wait:
+# ------------------------------------------------------------------ #
+# Step 2: Build cloud-init payloads                                   #
+# ------------------------------------------------------------------ #
+- name: Build cloud-init metadata (network config + hostname)
+  ansible.builtin.set_fact:
+    _vmware_cloud_init_metadata: |
+      instance-id: {{ new_vm_name }}
+      local-hostname: {{ new_hostname }}{% if dns_domain | length > 0 %}.{{ dns_domain }}{% endif %}
+
+      network:
+        version: 2
+        ethernets:
+          {{ vm_network_interface }}:
+            addresses:
+              - {{ nic_ip }}/{{ nic_prefix }}
+            gateway4: {{ nic_gw }}
+            nameservers:
+              addresses: {{ dns_servers | to_json }}{% if dns_domain | length > 0 %}
+              search:
+                - {{ dns_domain }}{% endif %}
+
+- name: Build cloud-init userdata (hostname, user, SSH key, password)
+  ansible.builtin.set_fact:
+    _vmware_cloud_init_userdata: |
+      #cloud-config
+      hostname: {{ new_hostname }}
+      {% if dns_domain | length > 0 %}fqdn: {{ new_hostname }}.{{ dns_domain }}{% endif %}
+
+      users:
+        - name: {{ vm_admin_user }}
+          groups: wheel
+          sudo: "ALL=(ALL) NOPASSWD:ALL"
+          shell: /bin/bash
+          lock_passwd: false
+          ssh_authorized_keys:
+            - {{ vm_ssh_public_key }}
+
+      chpasswd:
+        list: |
+          {{ vm_admin_user }}:{{ vm_admin_password }}
+        expire: false
+
+      ssh_pwauth: false
+
+      runcmd:
+        - nmcli con reload
+
+# ------------------------------------------------------------------ #
+# Step 3: Inject cloud-init payloads as guestinfo properties          #
+# ------------------------------------------------------------------ #
+- name: Inject cloud-init guestinfo (metadata + userdata)
+  community.vmware.vmware_guest:
     hostname: "{{ vmware.host }}"
     username: "{{ vmware.username }}"
     password: "{{ vmware.password }}"
     validate_certs: false
     name: "{{ new_vm_name }}"
     datacenter: "{{ ha_datacenter }}"
-    timeout: 300
+    state: present
+    advanced_settings:
+      - key: guestinfo.metadata
+        value: "{{ _vmware_cloud_init_metadata | b64encode }}"
+      - key: guestinfo.metadata.encoding
+        value: base64
+      - key: guestinfo.userdata
+        value: "{{ _vmware_cloud_init_userdata | b64encode }}"
+      - key: guestinfo.userdata.encoding
+        value: base64
 
-- name: Add new VM to in-memory inventory
-  ansible.builtin.add_host:
+# ------------------------------------------------------------------ #
+# Step 4: Power on — cloud-init reads guestinfo on first boot         #
+# ------------------------------------------------------------------ #
+- name: Power on VM
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{ vmware.host }}"
+    username: "{{ vmware.username }}"
+    password: "{{ vmware.password }}"
+    validate_certs: false
     name: "{{ new_vm_name }}"
-    ansible_host: "{{ nic_ip }}"
-    ansible_user: "{{ vm_ssh_user }}"
-    ansible_ssh_private_key_file: "{{ vm_ssh_key | default(omit) }}"
-    ansible_become: true
-    ansible_become_method: sudo
-    groups: vmware_new_vms
+    datacenter: "{{ ha_datacenter }}"
+    state: powered-on
 
 - name: Wait for SSH on new VM to become reachable
   ansible.builtin.wait_for:
     host: "{{ nic_ip }}"
     port: 22
-    timeout: 300
+    timeout: "{{ ssh_wait_timeout }}"
     state: started
   delegate_to: localhost
 
-- name: Set hostname on new VM
-  ansible.builtin.hostname:
-    name: "{{ new_hostname }}"
-  delegate_to: "{{ new_vm_name }}"
-  become: true
-
-- name: Ensure /etc/hosts reflects the new hostname
-  ansible.builtin.lineinfile:
-    path: /etc/hosts
-    regexp: "^127\\.0\\.1\\.1"
-    line: "127.0.1.1  {{ new_hostname }}"
-    state: present
-  delegate_to: "{{ new_vm_name }}"
-  become: true
-
-- name: Gather active NetworkManager connection name
-  ansible.builtin.command:
-    cmd: nmcli -t -f NAME,DEVICE con show --active
-  register: nmcli_active
-  changed_when: false
-  delegate_to: "{{ new_vm_name }}"
-  become: true
-
-- name: Set static IP, gateway, and DNS via nmcli
-  ansible.builtin.command:
-    cmd: >
-      nmcli con mod "{{ nmcli_active.stdout_lines[0].split(':')[0] }}"
-      ipv4.addresses "{{ nic_ip }}/{{ nic_prefix }}"
-      ipv4.gateway "{{ nic_gw }}"
-      ipv4.dns "{{ dns_servers | join(' ') }}"
-      ipv4.method manual
-      connection.autoconnect yes
-  register: nmcli_mod
-  changed_when: nmcli_mod.rc == 0
-  delegate_to: "{{ new_vm_name }}"
-  become: true
-
-- name: Reload NetworkManager connection to apply changes
-  ansible.builtin.command:
-    cmd: nmcli con up "{{ nmcli_active.stdout_lines[0].split(':')[0] }}"
-  changed_when: true
-  delegate_to: "{{ new_vm_name }}"
-  become: true
+- name: Add new VM to in-memory inventory
+  ansible.builtin.add_host:
+    name: "{{ new_vm_name }}"
+    ansible_host: "{{ nic_ip }}"
+    ansible_user: "{{ vm_admin_user }}"
+    ansible_ssh_private_key_file: "{{ vm_ssh_key | default(omit) }}"
+    ansible_become: true
+    ansible_become_method: sudo
+    groups: vmware_new_vms

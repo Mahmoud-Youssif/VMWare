@@ -12,15 +12,21 @@ template_name: ""
 # Network configuration
 nic_virt_group: ""
 nic_ip: ""
-nic_netmask: ""
 nic_prefix: "24"
 nic_gw: ""
-dns_servers:
-  - ""
+dns_servers: []
 
 # DNS search domain (optional)
 dns_domain: ""
 
-# SSH access to the new VM (used for post-boot configuration)
-vm_ssh_user: "ansible"
+# NIC name inside the RHEL guest (VMXNET3 on vSphere is typically ens192)
+vm_network_interface: "ens192"
+
+# SSH and user credentials for the new VM
+vm_admin_user: "ansible"
+vm_admin_password: ""
+vm_ssh_public_key: ""
 vm_ssh_key: ""
+
+# How long to wait for SSH after power-on (seconds)
+ssh_wait_timeout: 300

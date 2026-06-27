@@ -1,0 +1,238 @@
+---
+# RHEL VM Provisioning via VMware with cloud-init (guestinfo datasource)
+#
+# Workflow:
+#   1. Clone the RHEL template (powered off — no VMware customization spec)
+#   2. Build cloud-init metadata (network, hostname) and userdata (users, SSH keys, password)
+#   3. Inject both payloads as base64-encoded guestinfo properties into the VM
+#   4. Power on — open-vm-tools feeds guestinfo to cloud-init on first boot
+#   5. Wait for SSH and verify cloud-init completed successfully
+#
+# Prerequisites on the template:
+#   - open-vm-tools installed and enabled
+#   - cloud-init installed and configured to use the VMware datasource
+#     (datasource_list: [VMware]) in /etc/cloud/cloud.cfg.d/
+#   - cloud-init state cleared (cloud-init clean --logs) before snapshot/export
+#
+# Required vars (pass via extra-vars, AAP survey, or group_vars):
+#   vcenter_host, vcenter_user, vcenter_password (env vars)
+#   vm_name, vm_hostname, template_name
+#   datacenter, cluster, datastore, folder
+#   nic_portgroup, nic_ip, nic_prefix, nic_gw, dns_servers
+#   vm_admin_user, vm_admin_password, vm_ssh_public_key
+
+- name: Clone and configure RHEL VM via cloud-init guestinfo
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    vcenter_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
+    vcenter_username: "{{ lookup('env', 'VCENTER_USER') }}"
+    vcenter_password: "{{ lookup('env', 'VCENTER_PASSWORD') }}"
+
+    vm_name: ""
+    vm_hostname: "{{ vm_name }}"
+    template_name: ""
+
+    datacenter: ""
+    cluster: ""
+    datastore: ""
+    folder: ""
+
+    nic_portgroup: ""
+    nic_ip: ""
+    nic_prefix: "24"
+    nic_gw: ""
+    dns_servers: []
+    dns_domain: ""
+
+    # The NIC name inside the guest (VMXNET3 on vSphere is typically ens192)
+    vm_network_interface: "ens192"
+
+    vm_admin_user: "ansible"
+    vm_admin_password: "{{ lookup('env', 'VM_ADMIN_PASSWORD') }}"
+    vm_ssh_public_key: "{{ lookup('env', 'VM_SSH_PUBLIC_KEY') }}"
+
+    # SSH timeout (seconds) after power-on
+    ssh_wait_timeout: 300
+
+  tasks:
+    - name: Assert required variables are set
+      ansible.builtin.assert:
+        that:
+          - vcenter_hostname | length > 0
+          - vcenter_username | length > 0
+          - vcenter_password | length > 0
+          - vm_name | length > 0
+          - vm_hostname | length > 0
+          - template_name | length > 0
+          - datacenter | length > 0
+          - cluster | length > 0
+          - nic_ip | length > 0
+          - nic_gw | length > 0
+          - dns_servers | length > 0
+          - vm_admin_password | length > 0
+          - vm_ssh_public_key | length > 0
+        fail_msg: "One or more required variables are missing. Check env vars and playbook vars."
+
+    # ------------------------------------------------------------------ #
+    # Step 1: Clone the template (powered off, no customization spec)     #
+    # ------------------------------------------------------------------ #
+    - name: Clone RHEL VM from template (powered off)
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        state: present
+        datacenter: "{{ datacenter }}"
+        cluster: "{{ cluster }}"
+        datastore: "{{ datastore | default(omit) }}"
+        folder: "{{ folder | default(omit) }}"
+        name: "{{ vm_name }}"
+        template: "{{ template_name }}"
+      register: vm_clone_result
+
+    # ------------------------------------------------------------------ #
+    # Step 2: Build cloud-init payloads                                   #
+    # ------------------------------------------------------------------ #
+    - name: Build cloud-init metadata (network config + hostname)
+      ansible.builtin.set_fact:
+        cloud_init_metadata: |
+          instance-id: {{ vm_name }}
+          local-hostname: {{ vm_hostname }}{% if dns_domain | length > 0 %}.{{ dns_domain }}{% endif %}
+
+          network:
+            version: 2
+            ethernets:
+              {{ vm_network_interface }}:
+                addresses:
+                  - {{ nic_ip }}/{{ nic_prefix }}
+                gateway4: {{ nic_gw }}
+                nameservers:
+                  addresses: {{ dns_servers | to_json }}{% if dns_domain | length > 0 %}
+                  search:
+                    - {{ dns_domain }}{% endif %}
+
+    - name: Build cloud-init userdata (hostname, user, SSH key, password)
+      ansible.builtin.set_fact:
+        cloud_init_userdata: |
+          #cloud-config
+          hostname: {{ vm_hostname }}
+          {% if dns_domain | length > 0 %}fqdn: {{ vm_hostname }}.{{ dns_domain }}{% endif %}
+
+          users:
+            - name: {{ vm_admin_user }}
+              groups: wheel
+              sudo: "ALL=(ALL) NOPASSWD:ALL"
+              shell: /bin/bash
+              lock_passwd: false
+              ssh_authorized_keys:
+                - {{ vm_ssh_public_key }}
+
+          chpasswd:
+            list: |
+              {{ vm_admin_user }}:{{ vm_admin_password }}
+            expire: false
+
+          ssh_pwauth: false
+
+          runcmd:
+            - nmcli con reload
+
+    # ------------------------------------------------------------------ #
+    # Step 3: Inject cloud-init payloads via VMware guestinfo             #
+    # ------------------------------------------------------------------ #
+    - name: Inject cloud-init metadata and userdata as guestinfo properties
+      community.vmware.vmware_guest:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        name: "{{ vm_name }}"
+        datacenter: "{{ datacenter }}"
+        state: present
+        advanced_settings:
+          - key: guestinfo.metadata
+            value: "{{ cloud_init_metadata | b64encode }}"
+          - key: guestinfo.metadata.encoding
+            value: base64
+          - key: guestinfo.userdata
+            value: "{{ cloud_init_userdata | b64encode }}"
+          - key: guestinfo.userdata.encoding
+            value: base64
+
+    # ------------------------------------------------------------------ #
+    # Step 4: Power on — cloud-init reads guestinfo on first boot         #
+    # ------------------------------------------------------------------ #
+    - name: Power on the VM
+      community.vmware.vmware_guest_powerstate:
+        hostname: "{{ vcenter_hostname }}"
+        username: "{{ vcenter_username }}"
+        password: "{{ vcenter_password }}"
+        validate_certs: false
+        name: "{{ vm_name }}"
+        datacenter: "{{ datacenter }}"
+        state: powered-on
+
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for:
+        host: "{{ nic_ip }}"
+        port: 22
+        timeout: "{{ ssh_wait_timeout }}"
+        state: started
+
+    - name: Add new VM to in-memory inventory
+      ansible.builtin.add_host:
+        name: "{{ vm_name }}"
+        ansible_host: "{{ nic_ip }}"
+        ansible_user: "{{ vm_admin_user }}"
+        ansible_ssh_private_key_file: "{{ vm_ssh_key | default(omit) }}"
+        ansible_become: true
+        ansible_become_method: sudo
+        groups: rhel_new_vms
+
+# ------------------------------------------------------------------ #
+# Step 5: Post-boot verification                                       #
+# ------------------------------------------------------------------ #
+- name: Verify cloud-init completed and configuration is applied
+  hosts: rhel_new_vms
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Wait for cloud-init to finish all stages
+      ansible.builtin.command:
+        cmd: cloud-init status --wait
+      register: cloud_init_status
+      changed_when: false
+      failed_when: "'error' in cloud_init_status.stdout | lower"
+
+    - name: Show cloud-init status
+      ansible.builtin.debug:
+        msg: "{{ cloud_init_status.stdout }}"
+
+    - name: Verify hostname is set correctly
+      ansible.builtin.command:
+        cmd: hostname
+      register: actual_hostname
+      changed_when: false
+
+    - name: Assert hostname matches expected value
+      ansible.builtin.assert:
+        that:
+          - actual_hostname.stdout == hostvars['localhost']['vm_hostname'] or
+            actual_hostname.stdout.startswith(hostvars['localhost']['vm_hostname'])
+        fail_msg: "Hostname mismatch: expected {{ hostvars['localhost']['vm_hostname'] }}, got {{ actual_hostname.stdout }}"
+
+    - name: Verify IP address is configured
+      ansible.builtin.command:
+        cmd: "ip addr show"
+      register: ip_config
+      changed_when: false
+
+    - name: Assert expected IP is present
+      ansible.builtin.assert:
+        that:
+          - hostvars['localhost']['nic_ip'] in ip_config.stdout
+        fail_msg: "Expected IP {{ hostvars['localhost']['nic_ip'] }} not found in network config."
