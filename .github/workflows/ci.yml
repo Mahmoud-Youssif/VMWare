@@ -56,7 +56,7 @@ jobs:
         run: pip install --quiet ansible ansible-lint
 
       - name: Install collections
-        run: ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+        run: ansible-galaxy collection install -r EE_vmware/requirements.yml -p ./collections
 
       - name: Run ansible-lint
         run: ansible-lint --profile production
@@ -80,7 +80,7 @@ jobs:
         run: pip install --quiet ansible
 
       - name: Install collections
-        run: ansible-galaxy collection install -r collections/requirements.yml -p ./collections
+        run: ansible-galaxy collection install -r EE_vmware/requirements.yml -p ./collections
 
       - name: Syntax check — playbook.yml
         run: ansible-playbook --syntax-check playbook.yml
