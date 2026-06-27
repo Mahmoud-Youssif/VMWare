@@ -1,0 +1,17 @@
+---
+extends: default
+
+rules:
+  line-length:
+    max: 160
+
+  truthy:
+    # Allow 'true'/'false' plus 'on'/'off' for GitHub Actions workflow files
+    allowed-values: ['true', 'false', 'on', 'off']
+
+  # Ansible files conventionally start with '---'; don't enforce either way
+  document-start: disable
+
+ignore: |
+  roles/vmware/.travis.yml
+  EE_vmware/context/

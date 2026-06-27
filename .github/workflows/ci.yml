@@ -39,8 +39,7 @@ jobs:
         run: pip install --quiet yamllint
 
       - name: Run yamllint
-        run: |
-          yamllint -d "{extends: default, rules: {line-length: {max: 160}, truthy: {allowed-values: ['true', 'false']}}}" .
+        run: yamllint .
 
   ansible-lint:
     name: Ansible Lint

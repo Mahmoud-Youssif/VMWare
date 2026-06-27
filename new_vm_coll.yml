@@ -1,7 +1,7 @@
 ---
 - name: Provision Windows VM from Template
   hosts: localhost
-  gather_facts: no
+  gather_facts: false
   vars:
     vcenter_hostname: "{{ lookup('env', 'VCENTER_HOST') }}"
     vcenter_username: "{{ lookup('env', 'VCENTER_USER') }}"
@@ -97,7 +97,7 @@
 
 - name: Configure Windows VM
   hosts: new_windows_vm
-  gather_facts: no
+  gather_facts: false
   vars:
     new_hostname: "{{ hostvars['localhost']['new_hostname'] }}"
     new_ip_address: "{{ hostvars['localhost']['new_ip_address'] }}"
