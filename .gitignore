@@ -1,0 +1,23 @@
+# Copies of ansible.cfg that may contain Automation Hub tokens
+ansible copy.cfg
+ansible*.cfg
+!ansible.cfg
+
+# ansible-builder generated build context (contains transient files)
+EE_vmware/context/
+EE_vmware/ansible.cfg
+
+# Ansible Vault password file and actual vault secrets
+.vault_pass
+group_vars/all/vault.yml
+
+# Credentials and tokens
+*.token
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Editor / OS
+.DS_Store
